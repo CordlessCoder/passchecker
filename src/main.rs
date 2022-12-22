@@ -178,7 +178,7 @@ fn main() {
                         let mut outcome = find_best_similarity(pass, &lines);
                         if let Some((checkpass, similarity)) = &outcome {
                             info = format!(
-                                "Best match in wordlist {} with similarity {}%",
+                                "Best match in wordlist is {} with similarity {}%",
                                 checkpass,
                                 similarity * 100.0
                             )
@@ -190,7 +190,7 @@ fn main() {
                             find_best_similarity(pass, &string.lines().collect::<Vec<_>>());
                         if let Some((checkpass, similarity)) = &outcome {
                             info = format!(
-                                "Best match in wordlist {} with similarity {}%",
+                                "Best match in wordlist is {} with similarity {}%",
                                 checkpass,
                                 similarity * 100.0
                             )
