@@ -121,13 +121,25 @@ fn main() {
         ),
         Test::new("numbers".to_string(), |cli: &Cli, pass: &str| {
             // pass.
-            let outcome = pass.chars().any(|c| c.is_digit(10));
+            let outcome = pass.chars().any(|c| c.is_ascii_digit());
             (
                 Some(outcome),
                 Cow::Borrowed(if outcome {
                     ""
                 } else {
                     "No numeric chacacters in password"
+                }),
+            )
+        }),
+        Test::new("quirky characters".to_string(), |cli: &Cli, pass: &str| {
+            // pass.
+            let outcome = pass.chars().any(|c| c.is_ascii_punctuation());
+            (
+                Some(outcome),
+                Cow::Borrowed(if outcome {
+                    ""
+                } else {
+                    "No special chacacters in password"
                 }),
             )
         }),
