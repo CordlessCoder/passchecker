@@ -5,16 +5,16 @@ use owo_colors::{
     Stream::{Stderr, Stdout},
     Style,
 };
+use similar_string::find_best_similarity;
+use std::io::stdin;
 use std::path::PathBuf;
 use std::{borrow::Cow, fs::read_to_string};
-use std::{cmp::min, io::stdin};
 
 #[derive(Debug, Clone)]
 enum WordlistType {
     Internal([&'static str; str_split!(include_str!("../wordlist"), '\n').len()]),
     External(String),
 }
-
 static WORDLIST: WordlistType = WordlistType::Internal(str_split!(
     str_replace!(include_str!("../wordlist"), '\r', ""),
     '\n'
@@ -37,6 +37,10 @@ struct Cli {
     /// Whether to perform the wordlist check, defaults to true
     #[arg(short, long)]
     enable_wordlist: Option<bool>,
+
+    /// The minimum percentage match required for a match to be considered a collision
+    #[arg(short, long)]
+    min_similarity: Option<u8>,
 }
 
 const DEFAULT_MIN_LENGTH: u8 = 8;
@@ -171,26 +175,37 @@ fn main() {
                 // should not be ignored
                 let outcome = match wordlist {
                     WordlistType::Internal(lines) => {
-                        let outcome = lines
-                            .into_iter()
-                            .find(|&checkpass| password_compare(checkpass, pass));
-                        if let Some(checkpass) = outcome {
-                            info = format!("Found a match in wordlist: {}", checkpass)
+                        let mut outcome = find_best_similarity(pass, &lines);
+                        if let Some((checkpass, similarity)) = &outcome {
+                            info = format!(
+                                "Best match in wordlist {} with similarity {}%",
+                                checkpass,
+                                similarity * 100.0
+                            )
                         }
                         outcome.map(|x| x.to_owned())
                     }
                     WordlistType::External(string) => {
-                        let outcome = string
-                            .lines()
-                            .find(|&checkpass| password_compare(checkpass, pass))
-                            .map(|x| x.to_owned());
-                        if let Some(checkpass) = &outcome {
-                            info = format!("Found a match in wordlist: {}", checkpass)
+                        let outcome =
+                            find_best_similarity(pass, &string.lines().collect::<Vec<_>>());
+                        if let Some((checkpass, similarity)) = &outcome {
+                            info = format!(
+                                "Best match in wordlist {} with similarity {}%",
+                                checkpass,
+                                similarity * 100.0
+                            )
                         }
                         outcome
                     }
                 };
-                (Some(outcome.is_none()), Cow::Owned(info))
+                (
+                    Some(
+                        outcome.is_some()
+                            && outcome.unwrap().1
+                                < (cli.min_similarity.unwrap_or(97).min(99) as f64 / 100.0),
+                    ),
+                    Cow::Owned(info),
+                )
             },
         ),
     ];

@@ -10,3 +10,4 @@ author = "CordlessCoder"
 clap = { version = "4.0.30", features = ["derive", "env", "unicode"] }
 owo-colors = { version = "3.5.0", features = ["supports-color", "supports-colors"] }
 const_format = {version = "0.2", features = ["rust_1_64"]}
+similar-string = "1.4.3"
