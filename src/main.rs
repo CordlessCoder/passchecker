@@ -6,9 +6,9 @@ use owo_colors::{
     Style,
 };
 use similar_string::find_best_similarity;
+use std::io::stdin;
 use std::path::PathBuf;
 use std::{borrow::Cow, fs::read_to_string};
-use std::{io::stdin, ops::RangeInclusive};
 
 #[derive(Debug, Clone)]
 enum WordlistType {
@@ -21,7 +21,7 @@ static WORDLIST: WordlistType = WordlistType::Internal(str_split!(
 ));
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author = "CordlessCoder", version, about, long_about = None)]
 struct Cli {
     /// The password to check
     password: Option<String>,
@@ -34,12 +34,12 @@ struct Cli {
     #[arg(short, long, value_name = "MINIMUM LENGTH")]
     min_length: Option<u8>,
 
-    /// Whether to perform the wordlist check, defaults to true
-    #[arg(short, long, value_enum)]
+    /// Which tests to ignore, optional
+    #[arg(short, long, value_enum, value_name = "IGNORE")]
     ignore: Option<Vec<Ignore>>,
 
     /// The minimum percentage match required for a match to be considered a collision
-    #[arg(short, long)]
+    #[arg(short, long, value_name = "MINIMUM SIMILARITY")]
     similarity: Option<u8>,
 }
 
@@ -189,7 +189,7 @@ fn main() {
                 // should not be ignored
                 let outcome = match wordlist {
                     WordlistType::Internal(lines) => {
-                        let mut outcome = find_best_similarity(pass, &lines);
+                        let outcome = find_best_similarity(pass, &lines);
                         if let Some((checkpass, similarity)) = &outcome {
                             info = format!(
                                 "Best match in wordlist is {} with similarity {}%",
