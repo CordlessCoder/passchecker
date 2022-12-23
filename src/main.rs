@@ -6,7 +6,7 @@ use owo_colors::{
     Style,
 };
 use similar_string::find_best_similarity;
-use std::io::stdin;
+use std::io::{stdin, stdout, Write};
 use std::path::PathBuf;
 use std::{borrow::Cow, fs::read_to_string};
 
@@ -89,6 +89,9 @@ fn main() {
     let password = if let Some(ref password) = cli.password {
         password
     } else {
+        let mut lock = stdout().lock();
+        write!(lock, "Please enter the password to check.\n> ").expect("Failed to write to stdout");
+        stdout().flush().expect("Failed to flust stdout");
         let stdin = stdin();
         // If no password was provided as an argument
         let Ok(_) = stdin.read_line(&mut buf) else {
