@@ -6,9 +6,9 @@ use owo_colors::{
     Style,
 };
 use similar_string::find_best_similarity;
-use std::io::stdin;
 use std::path::PathBuf;
 use std::{borrow::Cow, fs::read_to_string};
+use std::{io::stdin, ops::RangeInclusive};
 
 #[derive(Debug, Clone)]
 enum WordlistType {
@@ -35,12 +35,20 @@ struct Cli {
     min_length: Option<u8>,
 
     /// Whether to perform the wordlist check, defaults to true
-    #[arg(short, long)]
-    enable_wordlist: Option<bool>,
+    #[arg(short, long, value_enum)]
+    ignore: Option<Vec<Ignore>>,
 
     /// The minimum percentage match required for a match to be considered a collision
     #[arg(short, long)]
-    min_similarity: Option<u8>,
+    similarity: Option<u8>,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq, PartialOrd, Eq)]
+enum Ignore {
+    MinimumChars,
+    Numbers,
+    SpecialChars,
+    WordlistCollisions,
 }
 
 const DEFAULT_MIN_LENGTH: u8 = 8;
@@ -48,11 +56,16 @@ const DEFAULT_MIN_LENGTH: u8 = 8;
 struct Test<'a> {
     name: String,
     test: fn(&'a Cli, &str) -> (Option<bool>, Cow<'a, str>),
+    ignore: Ignore,
 }
 
 impl<'a> Test<'a> {
-    fn new(name: String, test: fn(&'a Cli, &str) -> (Option<bool>, Cow<'a, str>)) -> Self {
-        Self { name, test }
+    fn new(
+        name: String,
+        test: fn(&'a Cli, &str) -> (Option<bool>, Cow<'a, str>),
+        ignore: Ignore,
+    ) -> Self {
+        Self { name, test, ignore }
     }
 }
 
@@ -65,10 +78,6 @@ impl<'a> Test<'a> {
 //         list: bool,
 //     },
 // }
-
-fn password_compare(checkpass: &str, pass: &str) -> bool {
-    checkpass == pass
-}
 
 fn main() {
     let success_style: Style = Style::new().black().bold().on_bright_green();
@@ -122,38 +131,43 @@ fn main() {
                     },
                 )
             },
+            Ignore::MinimumChars,
         ),
-        Test::new("numbers".to_string(), |cli: &Cli, pass: &str| {
-            // pass.
-            let outcome = pass.chars().any(|c| c.is_ascii_digit());
-            (
-                Some(outcome),
-                Cow::Borrowed(if outcome {
-                    ""
-                } else {
-                    "No numeric chacacters in password"
-                }),
-            )
-        }),
-        Test::new("quirky characters".to_string(), |cli: &Cli, pass: &str| {
-            // pass.
-            let outcome = pass.chars().any(|c| c.is_ascii_punctuation());
-            (
-                Some(outcome),
-                Cow::Borrowed(if outcome {
-                    ""
-                } else {
-                    "No special chacacters in password"
-                }),
-            )
-        }),
+        Test::new(
+            "numbers".to_string(),
+            |_cli: &Cli, pass: &str| {
+                // pass.
+                let outcome = pass.chars().any(|c| c.is_ascii_digit());
+                (
+                    Some(outcome),
+                    Cow::Borrowed(if outcome {
+                        ""
+                    } else {
+                        "No numeric chacacters in password"
+                    }),
+                )
+            },
+            Ignore::Numbers,
+        ),
+        Test::new(
+            "quirky characters".to_string(),
+            |_cli: &Cli, pass: &str| {
+                // pass.
+                let outcome = pass.chars().any(|c| c.is_ascii_punctuation());
+                (
+                    Some(outcome),
+                    Cow::Borrowed(if outcome {
+                        ""
+                    } else {
+                        "No special chacacters in password"
+                    }),
+                )
+            },
+            Ignore::SpecialChars,
+        ),
         Test::new(
             "collisions in wordlist".to_string(),
             |cli: &Cli, pass: &str| {
-                // Only execute the wordlist logic if enable_wordlist is true or was not provided
-                if cli.enable_wordlist == Some(false) {
-                    return (None, Cow::Borrowed("Disabled with -e false"));
-                }
                 let mut info = String::new();
                 // Read wordlist from file if provided, default to internal otherwise
                 let wordlist = if let Some(wordlist_path) = cli.wordlist.as_deref() {
@@ -202,11 +216,12 @@ fn main() {
                     Some(
                         outcome.is_some()
                             && outcome.unwrap().1
-                                < (cli.min_similarity.unwrap_or(97).min(99) as f64 / 100.0),
+                                < (cli.similarity.unwrap_or(97).min(99) as f64 / 100.0),
                     ),
                     Cow::Owned(info),
                 )
             },
+            Ignore::WordlistCollisions,
         ),
     ];
     let longest_name = tests.iter().fold(0, |acc, Test { name, .. }| {
@@ -220,52 +235,64 @@ fn main() {
     let mut enabled_count = 0u32;
     let successes = tests
         .iter()
-        .filter(|Test { name: expl, test }| {
-            let difference = longest_name
-                - (expl.chars().count() - expl.chars().filter(|x| x == &'\u{1b}').count() * 5);
-            print!("{expl}:{}", " ".repeat(difference));
-            let (outcome, info) = test(&cli, &password);
-            match outcome {
-                Some(true) => {
-                    println!(
-                        "{}",
-                        "success".if_supports_color(Stdout, |x| x.style(success_style))
-                    );
-                    if info != "" {
-                        println!("Additional info: {}", info)
+        .filter(
+            |Test {
+                 name: expl,
+                 test,
+                 ignore,
+             }| {
+                let difference = longest_name
+                    - (expl.chars().count() - expl.chars().filter(|x| x == &'\u{1b}').count() * 5);
+                print!("{expl}:{}", " ".repeat(difference));
+                // Only execute the logic if enable_wordlist is true or was not provided
+                let (outcome, info) =
+                    if cli.ignore.as_deref().map(|x| x.contains(&ignore)) == Some(true) {
+                        (None, Cow::Owned(format!("disabled with -i {ignore:?}")))
+                    } else {
+                        test(&cli, &password)
+                    };
+                match outcome {
+                    Some(true) => {
+                        println!(
+                            "{}",
+                            "success".if_supports_color(Stdout, |x| x.style(success_style))
+                        );
+                        if info != "" {
+                            println!("Additional info: {}", info)
+                        }
+                    }
+                    Some(false) => {
+                        println!(
+                            "{}",
+                            "failure".if_supports_color(Stdout, |x| x.style(failure_style))
+                        );
+                        println!(
+                            "Additional info: {}",
+                            info.if_supports_color(Stdout, |x| x.style(failure_style))
+                        )
+                    }
+                    None => {
+                        println!(
+                            "{}",
+                            "ignored".if_supports_color(Stdout, |x| x.style(ignored_style))
+                        );
+                        println!(
+                            "Additional info: {}",
+                            info.if_supports_color(Stdout, |x| x.style(ignored_style))
+                        )
                     }
                 }
-                Some(false) => {
-                    println!(
-                        "{}",
-                        "failure".if_supports_color(Stdout, |x| x.style(failure_style))
-                    );
-                    println!(
-                        "Additional info: {}",
-                        info.if_supports_color(Stdout, |x| x.style(failure_style))
-                    )
+                if outcome.is_some() {
+                    enabled_count += 1
                 }
-                None => {
-                    println!(
-                        "{}",
-                        "ignored".if_supports_color(Stdout, |x| x.style(ignored_style))
-                    );
-                    println!(
-                        "Additional info: {}",
-                        info.if_supports_color(Stdout, |x| x.style(ignored_style))
-                    )
-                }
-            }
-            if outcome.is_some() {
-                enabled_count += 1
-            }
-            outcome.unwrap_or(false)
-        })
+                outcome.unwrap_or(false)
+            },
+        )
         .count();
     println!(
         "Passed {} out of {} tests ({}%), {} ignored",
         successes.if_supports_color(Stdout, |x| x.blue()),
-        tests.len().if_supports_color(Stdout, |x| x.blue()),
+        enabled_count.if_supports_color(Stdout, |x| x.blue()),
         (successes as f32 / enabled_count as f32 * 100.0).if_supports_color(Stdout, |x| x.yellow()),
         (tests.len() - enabled_count as usize)
             .if_supports_color(Stdout, |x| x.style(ignored_style))
